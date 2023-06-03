@@ -1,27 +1,31 @@
-import torch
-import torch.nn.functional as F
 import numpy as np
+import torch
+import torch.autograd as autograd
+import torch.nn.functional as F
 from scipy import interpolate
 
 
 class InputPadder:
     """ Pads images such that dimensions are divisible by 8 """
+
     def __init__(self, dims, mode='sintel'):
         self.ht, self.wd = dims[-2:]
         pad_ht = (((self.ht // 8) + 1) * 8 - self.ht) % 8
         pad_wd = (((self.wd // 8) + 1) * 8 - self.wd) % 8
         if mode == 'sintel':
-            self._pad = [pad_wd//2, pad_wd - pad_wd//2, pad_ht//2, pad_ht - pad_ht//2]
+            self._pad = [pad_wd//2, pad_wd - pad_wd//2,
+                         pad_ht//2, pad_ht - pad_ht//2]
         else:
             self._pad = [pad_wd//2, pad_wd - pad_wd//2, 0, pad_ht]
 
     def pad(self, *inputs):
         return [F.pad(x, self._pad, mode='replicate') for x in inputs]
 
-    def unpad(self,x):
+    def unpad(self, x):
         ht, wd = x.shape[-2:]
         c = [self._pad[2], ht-self._pad[3], self._pad[0], wd-self._pad[1]]
         return x[..., c[0]:c[1], c[2]:c[3]]
+
 
 def forward_interpolate(flow):
     flow = flow.detach().cpu().numpy()
@@ -32,7 +36,7 @@ def forward_interpolate(flow):
 
     x1 = x0 + dx
     y1 = y0 + dy
-    
+
     x1 = x1.reshape(-1)
     y1 = y1.reshape(-1)
     dx = dx.reshape(-1)
@@ -57,7 +61,7 @@ def forward_interpolate(flow):
 def bilinear_sampler(img, coords, mode='bilinear', mask=False):
     """ Wrapper for grid_sample, uses pixel coordinates """
     H, W = img.shape[-2:]
-    xgrid, ygrid = coords.split([1,1], dim=-1)
+    xgrid, ygrid = coords.split([1, 1], dim=-1)
     xgrid = 2*xgrid/(W-1) - 1
     ygrid = 2*ygrid/(H-1) - 1
 
@@ -72,11 +76,81 @@ def bilinear_sampler(img, coords, mode='bilinear', mask=False):
 
 
 def coords_grid(batch, ht, wd, device):
-    coords = torch.meshgrid(torch.arange(ht, device=device), torch.arange(wd, device=device))
+    coords = torch.meshgrid(torch.arange(ht, device=device),
+                            torch.arange(wd, device=device))
     coords = torch.stack(coords[::-1], dim=0).float()
     return coords[None].repeat(batch, 1, 1, 1)
 
 
 def upflow8(flow, mode='bilinear'):
     new_size = (8 * flow.shape[2], 8 * flow.shape[3])
-    return  8 * F.interpolate(flow, size=new_size, mode=mode, align_corners=True)
+    return 8 * F.interpolate(flow, size=new_size, mode=mode, align_corners=True)
+
+
+def create_flow_grid(flow):
+    B, C, H, W = flow.size()
+    # mesh grid
+    xx = torch.arange(0, W).view(1, -1).repeat(H, 1)
+    yy = torch.arange(0, H).view(-1, 1).repeat(1, W)
+    xx = xx.view(1, 1, H, W).repeat(B, 1, 1, 1)
+    yy = yy.view(1, 1, H, W).repeat(B, 1, 1, 1)
+    grid = torch.cat((xx, yy), 1).float()
+
+    if flow.is_cuda:
+        grid = grid.to(flow.get_device())
+    vgrid = grid + flow
+
+    # scale grid to [-1,1]
+    vgrid[:, 0, :, :] = 2.0 * vgrid[:, 0, :, :].clone() / max(W - 1, 1) - 1.0
+    vgrid[:, 1, :, :] = 2.0 * vgrid[:, 1, :, :].clone() / max(H - 1, 1) - 1.0
+
+    return vgrid.permute(0, 2, 3, 1)
+
+
+def warp_flow(x, flow, use_mask=False):
+    """
+    warp an image/tensor (im2) back to im1, according to the optical flow
+    Inputs:
+    x: [B, C, H, W] (im2)
+    flow: [B, 2, H, W] flow
+    Returns:
+    ouptut: [B, C, H, W]
+    """
+    vgrid = create_flow_grid(flow)
+    output = F.grid_sample(x, vgrid, align_corners=True)
+    if use_mask:
+        mask = autograd.Variable(torch.ones(x.size())).to(x.get_device())
+        mask = F.grid_sample(mask, vgrid, align_corners=True)
+        mask[mask < 0.9999] = 0
+        mask[mask > 0] = 1
+        output = output * mask
+
+    return output
+
+
+def SSIM_error(x, y):
+    C1 = 0.01 ** 2
+    C2 = 0.03 ** 2
+
+    mu_x = F.avg_pool2d(x, 3, 1, 0)
+    mu_y = F.avg_pool2d(y, 3, 1, 0)
+
+    # (input, kernel, stride, padding)
+    sigma_x = F.avg_pool2d(x ** 2, 3, 1, 0) - mu_x ** 2
+    sigma_y = F.avg_pool2d(y ** 2, 3, 1, 0) - mu_y ** 2
+    sigma_xy = F.avg_pool2d(x * y, 3, 1, 0) - mu_x * mu_y
+
+    SSIM_n = (2 * mu_x * mu_y + C1) * (2 * sigma_xy + C2)
+    SSIM_d = (mu_x ** 2 + mu_y ** 2 + C1) * (sigma_x + sigma_y + C2)
+
+    SSIM = SSIM_n / SSIM_d
+
+    return torch.clamp((1 - SSIM) / 2, 0, 1)
+
+
+def photometric_error(img1: torch.Tensor, img2: torch.Tensor,
+                      flow: torch.Tensor, valid: torch.Tensor):
+    img1_warped = warp_flow(img2, flow)
+    l1_err = (img1_warped * valid - img1 * valid).abs()
+    ssim_err = SSIM_error(img1_warped * valid, img1 * valid)
+    return l1_err.mean(), ssim_err.mean()

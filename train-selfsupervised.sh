@@ -1,16 +1,16 @@
 #!/bin/bash
 mkdir -p checkpoints
 
-cmd_scratch="python -u train-supervised.py \
-                    --name raft-sintel-supervised-scratch \
+cmd_scratch="python -u train-selfsupervised.py \
+                    --name raft-sintel-selfsupervised-scratch \
                     --validation sintel \
                     --num_epochs 100 \
                     --batch_size 6 \
                     --lr 0.0004 \
                     --wdecay 0.00001"
 
-cmd_transfer="python -u train-supervised.py \
-                     --name raft-sintel-supervised-transfer \
+cmd_transfer="python -u train-selfsupervised.py \
+                     --name raft-sintel-selfsupervised-transfer \
                      --validation sintel \
                      --restore_ckpt checkpoints/raft-things.pth \
                      --freeze_bn \

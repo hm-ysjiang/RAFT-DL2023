@@ -1,13 +1,14 @@
 from __future__ import division, print_function
-from pathlib import Path  # nopep8
 
 import sys  # nopep8
+from pathlib import Path  # nopep8
 
 sys.path.append('core')  # nopep8
 
 import argparse
 import os
 import time
+from typing import List
 
 import cv2
 import matplotlib.pyplot as plt
@@ -22,6 +23,7 @@ from raft import RAFT
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+from utils.utils import photometric_error
 
 import datasets
 import evaluate
@@ -51,9 +53,12 @@ except:
 MAX_FLOW = 400
 SUM_FREQ = 100
 VAL_FREQ = 5000
+SSIM_WEIGHT = 0.84
 
 
-def sequence_loss(flow_preds, flow_gt, valid, gamma=0.8, max_flow=MAX_FLOW):
+def sequence_loss(flow_preds: List[torch.Tensor], flow_gt: torch.Tensor,
+                  image1: torch.Tensor, image2: torch.Tensor,
+                  valid: torch.Tensor, gamma=0.8, max_flow=MAX_FLOW):
     """ Loss function defined over sequence of flow predictions """
 
     n_predictions = len(flow_preds)
@@ -65,8 +70,9 @@ def sequence_loss(flow_preds, flow_gt, valid, gamma=0.8, max_flow=MAX_FLOW):
 
     for i in range(n_predictions):
         i_weight = gamma**(n_predictions - i - 1)
-        i_loss = (flow_preds[i] - flow_gt).abs()
-        flow_loss += i_weight * (valid[:, None] * i_loss).mean()
+        l1_err, ssim_err = photometric_error(image1, image2, flow_preds[i], valid[:, None])
+        i_loss = (1 - SSIM_WEIGHT) * l1_err + SSIM_WEIGHT * ssim_err
+        flow_loss += i_weight * i_loss
 
     epe = torch.sum((flow_preds[-1] - flow_gt)**2, dim=1).sqrt()
     epe = epe.view(-1)[valid.view(-1)]
@@ -136,8 +142,8 @@ def train(args):
 
             flow_predictions = model(image1, image2, iters=args.iters)
 
-            loss, metrics = sequence_loss(flow_predictions,
-                                          flow, valid,
+            loss, metrics = sequence_loss(flow_predictions, flow,
+                                          image1, image2, valid,
                                           args.gamma)
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
