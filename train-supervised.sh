@@ -15,6 +15,7 @@ cmd_transfer="python -u train-supervised.py \
                      --name raft-sintel-supervised-transfer \
                      --validation sintel \
                      --restore_ckpt checkpoints/raft-things.pth \
+                     --freeze_bn \
                      --gpus 0 \
                      --num_epochs 100 \
                      --batch_size 6 \
@@ -23,5 +24,8 @@ cmd_transfer="python -u train-supervised.py \
                      --wdecay 0.00001 \
                      --gamma=0.85"
 
-echo ${cmd_scratch}
-eval ${cmd_scratch}
+# echo ${cmd_scratch}
+# eval ${cmd_scratch}
+
+echo ${cmd_transfer}
+eval ${cmd_transfer}

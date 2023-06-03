@@ -1,4 +1,5 @@
-from __future__ import division, print_function  # nopep8
+from __future__ import division, print_function
+from pathlib import Path  # nopep8
 
 import sys  # nopep8
 
@@ -96,28 +97,29 @@ def fetch_optimizer(args, model, steps):
 
 
 def train(args):
-
     model = nn.DataParallel(RAFT(args), device_ids=args.gpus)
     print("Parameter Count: %d" % count_parameters(model))
 
     if args.restore_ckpt is not None:
-        model.load_state_dict(torch.load(args.restore_ckpt), strict=False)
+        model.load_state_dict(torch.load(args.restore_ckpt),
+                              strict=(not args.allow_nonstrict))
 
     model.cuda()
     model.train()
 
-    if args.restore_ckpt:
+    if args.freeze_bn:
         model.module.freeze_bn()
 
     train_loader = datasets.fetch_dataloader(args)
-    optimizer, scheduler = fetch_optimizer(
-        args, model, len(train_loader) * args.num_epochs)
+    optimizer, scheduler = fetch_optimizer(args, model,
+                                           len(train_loader) * args.num_epochs)
 
     scaler = GradScaler(enabled=args.mixed_precision)
     logger = Logger(args.name)
 
     VAL_FREQ = 5000
     add_noise = True
+    best_evaluation = None
 
     for epoch in range(args.num_epochs):
         logger.initPbar(len(train_loader), epoch + 1)
@@ -134,8 +136,9 @@ def train(args):
 
             flow_predictions = model(image1, image2, iters=args.iters)
 
-            loss, metrics = sequence_loss(
-                flow_predictions, flow, valid, args.gamma)
+            loss, metrics = sequence_loss(flow_predictions,
+                                          flow, valid,
+                                          args.gamma)
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
@@ -147,8 +150,6 @@ def train(args):
             logger.push({'loss': loss.item()})
 
         logger.closePbar()
-        PATH = 'checkpoints/%s_%d.pth' % (args.name, epoch + 1)
-        torch.save(model.state_dict(), PATH)
 
         results = {}
         for val_dataset in args.validation:
@@ -158,15 +159,20 @@ def train(args):
                 results.update(evaluate.validate_sintel(model.module))
             elif val_dataset == 'kitti':
                 results.update(evaluate.validate_kitti(model.module))
-
         logger.write_dict(results, 'epoch')
 
+        evaluation_score = np.mean(list(results.values()))
+        if best_evaluation is None or evaluation_score < best_evaluation:
+            best_evaluation = evaluation_score
+            PATH = 'checkpoints/%s/model-best.pth' % args.name
+            torch.save(model.state_dict(), PATH)
+
         model.train()
-        if args.restore_ckpt:
+        if args.freeze_bn:
             model.module.freeze_bn()
 
     logger.close()
-    PATH = 'checkpoints/%s.pth' % args.name
+    PATH = 'checkpoints/%s/model.pth' % args.name
     torch.save(model.state_dict(), PATH)
 
     return PATH
@@ -175,9 +181,11 @@ def train(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--name', default='raft', help="name your experiment")
-    parser.add_argument(
-        '--stage', help="determines which dataset to use for training")
+    parser.add_argument('--freeze_bn', action='store_true',
+                        help="freeze the batch norm layer")
     parser.add_argument('--restore_ckpt', help="restore checkpoint")
+    parser.add_argument('--allow_nonstrict', action='store_true',
+                        help='allow non-strict loading')
     parser.add_argument('--small', action='store_true', help='use small model')
     parser.add_argument('--validation', type=str, nargs='+')
 
@@ -205,7 +213,6 @@ if __name__ == '__main__':
 
     cudnn_backend.benchmark = True
 
-    if not os.path.isdir('checkpoints'):
-        os.mkdir('checkpoints')
+    os.makedirs(Path(__file__).parent.joinpath('checkpoints', args.name))
 
     train(args)
