@@ -7,13 +7,20 @@ Zachary Teed and Jia Deng<br/>
 
 <img src="RAFT.png">
 
+## Todos
+ - [ ] Train supervised to 200 (See if scratch is good enough)
+ - [ ] Train self-supervised to 200 (Using scratch / transfer)
+ - [ ] Run experiments of ctx size = { 96, 64 }
+ - [ ] Add self-collected dataset experiments
+ - [ ] Try-out context attention module ([GMFlowNet](https://github.com/xiaofeng94/GMFlowNet))
+
 ## Requirements
 The code has been tested with PyTorch 1.6 and Cuda 10.1.
 ```Shell
 conda create --name raft
 conda activate raft
-conda install pytorch=1.6.0 torchvision=0.7.0 cudatoolkit=10.1 matplotlib tensorboard scipy opencv -c pytorch
 ```
+Then follow the commands inside `setup-env.sh`
 
 ## Demos
 Pretrained models can be downloaded by running

@@ -6,7 +6,9 @@ sys.path.append('core')  # nopep8
 
 import argparse
 import os
+from collections import OrderedDict
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -94,8 +96,14 @@ def train(args):
     print("Parameter Count: %d" % count_parameters(model))
 
     if args.restore_ckpt is not None:
-        model.load_state_dict(torch.load(args.restore_ckpt),
-                              strict=(not args.allow_nonstrict))
+        checkpoint: OrderedDict[str, Any] = torch.load(args.restore_ckpt)
+        if args.reset_context:
+            weight = OrderedDict()
+            for key, val in checkpoint.items():
+                if '.cnet.' not in key:
+                    weight[key] = val
+            checkpoint = weight
+        model.load_state_dict(checkpoint, strict=(not args.allow_nonstrict))
 
     model.cuda()
     model.train()
@@ -199,7 +207,16 @@ if __name__ == '__main__':
     parser.add_argument('--gamma', type=float, default=0.8,
                         help='exponential weighting')
     parser.add_argument('--add_noise', action='store_true')
+
+    parser.add_argument('--hidden', type=int, default=128,
+                        help='The hidden size of the updater')
+    parser.add_argument('--context', type=int, default=128,
+                        help='The context size of the updater')
+    parser.add_argument('--reset_context', action='store_true')
+
     args = parser.parse_args()
+    if args.hidden != 128 or args.context != 128:
+        args.reset_context = True
 
     torch.manual_seed(1234)
     np.random.seed(1234)

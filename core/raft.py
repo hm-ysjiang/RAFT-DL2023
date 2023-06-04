@@ -27,14 +27,14 @@ class RAFT(nn.Module):
         self.args = args
 
         if args.small:
-            self.hidden_dim = hdim = 96
-            self.context_dim = cdim = 64
+            self.hidden_dim = hdim = (args.hidden // 4) * 3
+            self.context_dim = cdim = args.context // 2
             args.corr_levels = 4
             args.corr_radius = 3
         
         else:
-            self.hidden_dim = hdim = 128
-            self.context_dim = cdim = 128
+            self.hidden_dim = hdim = args.hidden
+            self.context_dim = cdim = args.context
             args.corr_levels = 4
             args.corr_radius = 4
 
