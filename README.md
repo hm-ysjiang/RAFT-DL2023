@@ -11,6 +11,7 @@ Zachary Teed and Jia Deng<br/>
  - [ ] Train supervised to 200 (See if scratch is good enough)
  - [ ] Train self-supervised to 200 (Using scratch / transfer)
  - [ ] Run experiments of ctx size = { 96, 64 }
+ - [ ] SSIM error on supervised setting
  - [ ] Add self-collected dataset experiments
  - [ ] Try-out context attention module ([GMFlowNet](https://github.com/xiaofeng94/GMFlowNet))
 

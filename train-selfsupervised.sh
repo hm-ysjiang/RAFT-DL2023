@@ -4,7 +4,7 @@ mkdir -p checkpoints
 cmd_scratch="python -u train-selfsupervised.py \
                     --name raft-sintel-selfsupervised-scratch \
                     --validation sintel \
-                    --num_epochs 100 \
+                    --num_epochs 200 \
                     --batch_size 6 \
                     --lr 0.0004 \
                     --wdecay 0.00001"
@@ -14,7 +14,7 @@ cmd_transfer="python -u train-selfsupervised.py \
                      --validation sintel \
                      --restore_ckpt checkpoints/raft-things.pth \
                      --freeze_bn \
-                     --num_epochs 100 \
+                     --num_epochs 200 \
                      --batch_size 6 \
                      --lr 0.000125 \
                      --wdecay 0.00001 \

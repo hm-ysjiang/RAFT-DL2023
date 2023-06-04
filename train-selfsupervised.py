@@ -64,8 +64,9 @@ def sequence_loss(flow_preds: List[torch.Tensor], flow_gt: torch.Tensor,
 
     for i in range(n_predictions):
         i_weight = gamma**(n_predictions - i - 1)
-        l1_err, ssim_err = photometric_error(
-            image1, image2, flow_preds[i], valid[:, None])
+        l1_err, ssim_err = photometric_error(image1, image2,
+                                             flow_preds[i],
+                                             valid[:, None])
         i_loss = (1 - SSIM_WEIGHT) * l1_err + SSIM_WEIGHT * ssim_err
         flow_loss += i_weight * i_loss
 
