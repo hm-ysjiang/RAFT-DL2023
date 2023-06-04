@@ -1,28 +1,21 @@
 from __future__ import division, print_function
 
 import sys  # nopep8
-from pathlib import Path  # nopep8
 
 sys.path.append('core')  # nopep8
 
 import argparse
 import os
-import time
+from pathlib import Path
 from typing import List
 
-import cv2
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn_backend
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from logger import Logger
 from raft import RAFT
-from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
 from utils.utils import photometric_error
 
 import datasets
@@ -70,7 +63,8 @@ def sequence_loss(flow_preds: List[torch.Tensor], flow_gt: torch.Tensor,
 
     for i in range(n_predictions):
         i_weight = gamma**(n_predictions - i - 1)
-        l1_err, ssim_err = photometric_error(image1, image2, flow_preds[i], valid[:, None])
+        l1_err, ssim_err = photometric_error(
+            image1, image2, flow_preds[i], valid[:, None])
         i_loss = (1 - SSIM_WEIGHT) * l1_err + SSIM_WEIGHT * ssim_err
         flow_loss += i_weight * i_loss
 

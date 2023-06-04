@@ -1,5 +1,4 @@
 from __future__ import division, print_function
-from pathlib import Path  # nopep8
 
 import sys  # nopep8
 
@@ -7,21 +6,15 @@ sys.path.append('core')  # nopep8
 
 import argparse
 import os
-import time
+from pathlib import Path
 
-import cv2
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn_backend
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from logger import Logger
 from raft import RAFT
-from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
 
 import datasets
 import evaluate
