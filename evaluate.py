@@ -172,16 +172,22 @@ def validate_kitti(model, iters=24):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', help="restore checkpoint")
-    parser.add_argument('--dataset', help="dataset for evaluation")
+    parser.add_argument('--dataset', default='sintel', help="dataset for evaluation")
     parser.add_argument('--small', action='store_true', help='use small model')
     parser.add_argument('--mixed_precision',
                         action='store_true', help='use mixed precision')
     parser.add_argument('--alternate_corr', action='store_true',
                         help='use efficent correlation implementation')
+    parser.add_argument('--hidden', type=int, default=128,
+                        help='The hidden size of the updater')
+    parser.add_argument('--context', type=int, default=128,
+                        help='The context size of the updater')
     args = parser.parse_args()
 
     model = torch.nn.DataParallel(RAFT(args))
-    model.load_state_dict(torch.load(args.model))
+    checkpoint = torch.load(args.model)
+    weight = checkpoint['model'] if 'model' in checkpoint else checkpoint
+    model.load_state_dict(weight)
 
     model.cuda()
     model.eval()

@@ -92,37 +92,43 @@ def fetch_optimizer(args, model, steps):
 
 
 def train(args):
+    train_loader = datasets.fetch_dataloader(args)
     model = nn.DataParallel(RAFT(args), device_ids=args.gpus)
     print("Parameter Count: %d" % count_parameters(model))
 
-    if args.restore_ckpt is not None:
-        checkpoint: OrderedDict[str, Any] = torch.load(args.restore_ckpt)
-        if args.reset_context:
-            weight = OrderedDict()
-            for key, val in checkpoint.items():
-                if '.cnet.' not in key:
-                    weight[key] = val
-            checkpoint = weight
-        model.load_state_dict(checkpoint, strict=(not args.allow_nonstrict))
+    optimizer, scheduler = fetch_optimizer(args, model,
+                                           len(train_loader) * args.num_epochs)
 
     model.cuda()
     model.train()
 
+    epoch_start = 0
+    if args.restore_ckpt is not None:
+        checkpoint = torch.load(args.restore_ckpt)
+        weight: OrderedDict[str, Any] = checkpoint['model']
+        if args.reset_context:
+            _weight = OrderedDict()
+            for key, val in checkpoint.items():
+                if '.cnet.' not in key:
+                    _weight[key] = val
+            weight = _weight
+        model.load_state_dict(weight, strict=(not args.allow_nonstrict))
+
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        scheduler = checkpoint['scheduler']
+        epoch_start = checkpoint['epoch']
+
     if args.freeze_bn:
         model.module.freeze_bn()
 
-    train_loader = datasets.fetch_dataloader(args)
-    optimizer, scheduler = fetch_optimizer(args, model,
-                                           len(train_loader) * args.num_epochs)
-
     scaler = GradScaler(enabled=args.mixed_precision)
-    logger = Logger(args.name)
+    logger = Logger(args.name, len(train_loader) * epoch_start)
 
     VAL_FREQ = 5000
     add_noise = True
     best_evaluation = None
 
-    for epoch in range(args.num_epochs):
+    for epoch in range(epoch_start, args.num_epochs):
         logger.initPbar(len(train_loader), epoch + 1)
         for batch_idx, data_blob in enumerate(train_loader):
             optimizer.zero_grad()
@@ -152,7 +158,12 @@ def train(args):
 
         logger.closePbar()
         PATH = 'checkpoints/%s/model.pth' % args.name
-        torch.save(model.state_dict(), PATH)
+        torch.save({
+            'epoch': epoch + 1,
+            'model': model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'scheduler': scheduler
+        }, PATH)
 
         results = {}
         for val_dataset in args.validation:
@@ -168,7 +179,12 @@ def train(args):
         if best_evaluation is None or evaluation_score < best_evaluation:
             best_evaluation = evaluation_score
             PATH = 'checkpoints/%s/model-best.pth' % args.name
-            torch.save(model.state_dict(), PATH)
+            torch.save({
+                'epoch': epoch + 1,
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'scheduler': scheduler
+            }, PATH)
 
         model.train()
         if args.freeze_bn:

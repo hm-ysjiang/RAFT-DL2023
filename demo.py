@@ -37,7 +37,9 @@ def viz(img, flo):
 
 def demo(args):
     model = torch.nn.DataParallel(RAFT(args))
-    model.load_state_dict(torch.load(args.model))
+    checkpoint = torch.load(args.model)
+    weight = checkpoint['model'] if 'model' in checkpoint else checkpoint
+    model.load_state_dict(weight)
 
     model = model.module
     model.to(DEVICE)
@@ -70,6 +72,10 @@ if __name__ == '__main__':
                         action='store_true', help='use mixed precision')
     parser.add_argument('--alternate_corr', action='store_true',
                         help='use efficent correlation implementation')
+    parser.add_argument('--hidden', type=int, default=128,
+                        help='The hidden size of the updater')
+    parser.add_argument('--context', type=int, default=128,
+                        help='The context size of the updater')
     args = parser.parse_args()
 
     os.makedirs('visualization', exist_ok=True)
