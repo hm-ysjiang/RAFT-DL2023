@@ -109,9 +109,10 @@ def train(args):
     model.train()
 
     epoch_start = 0
+    best_evaluation = None
     if args.restore_ckpt is not None:
         checkpoint = torch.load(args.restore_ckpt)
-        weight: OrderedDict[str, Any] = checkpoint['model']
+        weight: OrderedDict[str, Any] = checkpoint['model'] if 'model' in checkpoint else checkpoint
         if args.reset_context:
             _weight = OrderedDict()
             for key, val in checkpoint.items():
@@ -120,9 +121,11 @@ def train(args):
             weight = _weight
         model.load_state_dict(weight, strict=(not args.allow_nonstrict))
 
-        optimizer.load_state_dict(checkpoint['optimizer'])
-        scheduler = checkpoint['scheduler']
-        epoch_start = checkpoint['epoch']
+        if 'epoch' in checkpoint:
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            scheduler = checkpoint['scheduler']
+            epoch_start = checkpoint['epoch']
+            best_evaluation = checkpoint.get('best_evaluation', None)
 
     if args.freeze_bn:
         model.module.freeze_bn()
@@ -132,7 +135,6 @@ def train(args):
 
     VAL_FREQ = 5000
     add_noise = True
-    best_evaluation = None
 
     for epoch in range(epoch_start, args.num_epochs):
         logger.initPbar(len(train_loader), epoch + 1)
@@ -168,7 +170,8 @@ def train(args):
             'epoch': epoch + 1,
             'model': model.state_dict(),
             'optimizer': optimizer.state_dict(),
-            'scheduler': scheduler
+            'scheduler': scheduler,
+            'best_evaluation': best_evaluation
         }, PATH)
 
         results = {}
@@ -189,7 +192,8 @@ def train(args):
                 'epoch': epoch + 1,
                 'model': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
-                'scheduler': scheduler
+                'scheduler': scheduler,
+                'best_evaluation': best_evaluation
             }, PATH)
 
         model.train()

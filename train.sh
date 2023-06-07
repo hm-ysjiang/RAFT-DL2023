@@ -27,6 +27,7 @@ cmd_supervised_transfer="python -u train-supervised.py \
                                 --lr 0.0002 \
                                 --wdecay 0.00001 \
                                 --gamma=0.85 \
+                                --allow_nonstrict \
                                 --reset_context \
                                 --context 128"
 
@@ -39,6 +40,7 @@ cmd_selfsupervised_transfer="python -u train-selfsupervised.py \
                                     --lr 0.0002 \
                                     --wdecay 0.00001 \
                                     --gamma=0.85 \
+                                    --allow_nonstrict \
                                     --reset_context \
                                     --context 128"
 
