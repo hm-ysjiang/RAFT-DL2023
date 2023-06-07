@@ -110,7 +110,13 @@ def train(args):
         if args.reset_context:
             _weight = OrderedDict()
             for key, val in checkpoint.items():
-                if '.cnet.' not in key and '.update_block.gru.' not in key:
+                if args.context != 128 and \
+                    ('.cnet.' in key or '.update_block.gru.' in key):
+                    pass
+                elif args.hidden != 128 and \
+                    ('.update_block.gru.' in key or '.update_block.flow_head.' in key):
+                    pass
+                else:
                     _weight[key] = val
             weight = _weight
         model.load_state_dict(weight, strict=(not args.allow_nonstrict))
