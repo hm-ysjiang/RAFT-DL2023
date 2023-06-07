@@ -1,6 +1,6 @@
 # From scratch
 cmd_supervised_scratch="python -u train-supervised.py \
-                               --name supervised-scratch-c128 \
+                               --name supervised-scratch \
                                --validation sintel \
                                --num_epochs 100 \
                                --batch_size 3 \
@@ -9,7 +9,7 @@ cmd_supervised_scratch="python -u train-supervised.py \
                                --context 128"
 
 cmd_selfsupervised_scratch="python -u train-selfsupervised.py \
-                                   --name selfsupervised-scratch-c128 \
+                                   --name selfsupervised-scratch \
                                    --validation sintel \
                                    --num_epochs 100 \
                                    --batch_size 3 \
@@ -19,7 +19,7 @@ cmd_selfsupervised_scratch="python -u train-selfsupervised.py \
 
 # Transfer
 cmd_supervised_transfer="python -u train-supervised.py \
-                                --name supervised-transfer-c128 \
+                                --name supervised-transfer \
                                 --validation sintel \
                                 --restore_ckpt checkpoints/raft-things.pth \
                                 --num_epochs 100 \
@@ -32,7 +32,7 @@ cmd_supervised_transfer="python -u train-supervised.py \
                                 --context 128"
 
 cmd_selfsupervised_transfer="python -u train-selfsupervised.py \
-                                    --name selfsupervised-transfer-c128 \
+                                    --name selfsupervised-transfer \
                                     --validation sintel \
                                     --restore_ckpt checkpoints/raft-things.pth \
                                     --num_epochs 100 \

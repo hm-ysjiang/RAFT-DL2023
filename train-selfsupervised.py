@@ -243,6 +243,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.hidden != 128 or args.context != 128:
         args.reset_context = True
+    args.name = f'{args.name}-ep{args.num_epochs}-c{args.context}'
 
     torch.manual_seed(1234)
     np.random.seed(1234)
