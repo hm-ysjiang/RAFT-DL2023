@@ -48,12 +48,12 @@ class RAFT(nn.Module):
         if args.small:
             self.fnet = SmallEncoder(output_dim=128, norm_fn='instance', dropout=args.dropout)        
             self.cnet = SmallEncoder(output_dim=hdim+cdim, norm_fn='none', dropout=args.dropout)
-            self.update_block = SmallUpdateBlock(self.args, hidden_dim=hdim)
+            self.update_block = SmallUpdateBlock(self.args, hidden_dim=hdim, input_dim=cdim)
 
         else:
             self.fnet = BasicEncoder(output_dim=256, norm_fn='instance', dropout=args.dropout)        
             self.cnet = BasicEncoder(output_dim=hdim+cdim, norm_fn='batch', dropout=args.dropout)
-            self.update_block = BasicUpdateBlock(self.args, hidden_dim=hdim)
+            self.update_block = BasicUpdateBlock(self.args, hidden_dim=hdim, input_dim=cdim)
 
     def freeze_bn(self):
         for m in self.modules():

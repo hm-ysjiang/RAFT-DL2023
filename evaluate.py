@@ -186,6 +186,8 @@ if __name__ == '__main__':
 
     model = torch.nn.DataParallel(RAFT(args))
     checkpoint = torch.load(args.model)
+    if 'epoch' in checkpoint:
+        print(f'Epoch {checkpoint["epoch"]}')
     weight = checkpoint['model'] if 'model' in checkpoint else checkpoint
     model.load_state_dict(weight)
 

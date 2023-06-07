@@ -97,10 +97,10 @@ class BasicMotionEncoder(nn.Module):
         return torch.cat([out, flow], dim=1)
 
 class SmallUpdateBlock(nn.Module):
-    def __init__(self, args, hidden_dim=96):
+    def __init__(self, args, hidden_dim=96, input_dim=64):
         super(SmallUpdateBlock, self).__init__()
         self.encoder = SmallMotionEncoder(args)
-        self.gru = ConvGRU(hidden_dim=hidden_dim, input_dim=82+64)
+        self.gru = ConvGRU(hidden_dim=hidden_dim, input_dim=82+input_dim)
         self.flow_head = FlowHead(hidden_dim, hidden_dim=128)
 
     def forward(self, net, inp, corr, flow):
@@ -116,7 +116,7 @@ class BasicUpdateBlock(nn.Module):
         super(BasicUpdateBlock, self).__init__()
         self.args = args
         self.encoder = BasicMotionEncoder(args)
-        self.gru = SepConvGRU(hidden_dim=hidden_dim, input_dim=128+hidden_dim)
+        self.gru = SepConvGRU(hidden_dim=hidden_dim, input_dim=128+input_dim)
         self.flow_head = FlowHead(hidden_dim, hidden_dim=256)
 
         self.mask = nn.Sequential(
