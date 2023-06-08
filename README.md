@@ -8,10 +8,11 @@ Zachary Teed and Jia Deng<br/>
 <img src="RAFT.png">
 
 ## Todos
- - [ ] Train supervised to 200 (See if scratch is good enough)
- - [ ] Train self-supervised to 200 (Using scratch / transfer)
- - [ ] Run experiments of ctx size = { 96, 64 }
+ - [x] Train supervised to 250 from scratch
+ - [x] Train self-supervised to 250 from scratch
+ - [ ] ~~Run experiments of ctx size = { 96, 64 }~~
  - [ ] SSIM error on supervised setting
+ - [ ] Try-out Global Matching technique as flow initialization
  - [ ] Add self-collected dataset experiments
  - [ ] Try-out context attention module ([GMFlowNet](https://github.com/xiaofeng94/GMFlowNet))
 
