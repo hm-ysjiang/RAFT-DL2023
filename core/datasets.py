@@ -118,7 +118,7 @@ from utils.augmentor import FlowAugmentor, SparseFlowAugmentor
 
 
 class Sintel(data.Dataset):
-    def __init__(self, aug_params=None, split: Literal['training', 'validate'] = 'training', root='datasets/Sintel', dstype='clean'):
+    def __init__(self, aug_params=None, split: Literal['training', 'validate'] = 'training', root='datasets/Sintel', dstype: Literal['clean', 'final'] = 'clean'):
         self.augmentor = None
         if aug_params is not None:
             self.augmentor = SparseFlowAugmentor(**aug_params)
@@ -135,7 +135,13 @@ class Sintel(data.Dataset):
         invalid_root = osp.join(root, 'training', 'invalid')
         occ_root = osp.join(root, 'training', 'occlusions')
 
-        for scene in os.listdir(image_root):
+        validation_set = {'ambush_5', 'bandage_2', 'market_5', 'temple_2'}
+        if self.split == 'training':
+            scene_sets = set(os.listdir(image_root)) - validation_set
+        else:
+            scene_sets = validation_set
+
+        for scene in scene_sets:
             image_list = []
             flow_list = []
             invalid_list = []
@@ -150,17 +156,22 @@ class Sintel(data.Dataset):
                                                  scene, '*.png')))
             occ_list += sorted(glob(osp.join(occ_root, scene, '*.png')))
 
-            split_index = n_pairs // 10
-            if self.split == 'training':
-                self.image_list += image_list[split_index:]
-                self.flow_list += flow_list[split_index:]
-                self.invalid_list += invalid_list[split_index:]
-                self.occ_list += occ_list[split_index:]
-            else:
-                self.image_list += image_list[:split_index]
-                self.flow_list += flow_list[:split_index]
-                self.invalid_list += invalid_list[:split_index]
-                self.occ_list += occ_list[:split_index]
+            self.image_list += image_list
+            self.flow_list += flow_list
+            self.invalid_list += invalid_list
+            self.occ_list += occ_list
+
+            # split_index = n_pairs // 10
+            # if self.split == 'training':
+            #     self.image_list += image_list[split_index:]
+            #     self.flow_list += flow_list[split_index:]
+            #     self.invalid_list += invalid_list[split_index:]
+            #     self.occ_list += occ_list[split_index:]
+            # else:
+            #     self.image_list += image_list[:split_index]
+            #     self.flow_list += flow_list[:split_index]
+            #     self.invalid_list += invalid_list[:split_index]
+            #     self.occ_list += occ_list[:split_index]
 
     def __len__(self):
         return len(self.image_list)
@@ -319,10 +330,18 @@ def fetch_dataloader(args, TRAIN_DS='C+T+K+S+H'):
     #     aug_params = {'crop_size': args.image_size, 'min_scale': -0.2, 'max_scale': 0.4, 'do_flip': False}
     #     train_dataset = KITTI(aug_params, split='training')
 
-    train_dataset = Sintel({'crop_size': args.image_size,
-                           'min_scale': -0.2, 'max_scale': 0, 'do_flip': True})
+    if args.dstype == 'mixed':
+        sintel_clean = Sintel({'crop_size': args.image_size,
+                               'min_scale': -0.2, 'max_scale': 0, 'do_flip': True}, dstype='clean')
+        sintel_final = Sintel({'crop_size': args.image_size,
+                               'min_scale': -0.2, 'max_scale': 0, 'do_flip': True}, dstype='final')
+        train_dataset = sintel_clean + sintel_final
+    else:
+        train_dataset = Sintel({'crop_size': args.image_size,
+                                'min_scale': -0.2, 'max_scale': 0, 'do_flip': True}, dstype=args.dstype)
+
     train_loader = data.DataLoader(train_dataset, batch_size=args.batch_size,
-                                   pin_memory=False, shuffle=True, num_workers=4, drop_last=True)
+                                   pin_memory=True, shuffle=True, num_workers=4, drop_last=True)
 
     print('Training with %d image pairs' % len(train_dataset))
     return train_loader

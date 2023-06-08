@@ -52,10 +52,11 @@ SSIM_WEIGHT = 0.84
 
 def sequence_loss(flow_preds: List[torch.Tensor], flow_gt: torch.Tensor,
                   image1: torch.Tensor, image2: torch.Tensor,
-                  valid: torch.Tensor, gamma=0.8, max_flow=MAX_FLOW):
+                  valid: torch.Tensor, args, max_flow=MAX_FLOW):
     """ Loss function defined over sequence of flow predictions """
 
     n_predictions = len(flow_preds)
+    gamma = args.gamma
     flow_loss: torch.Tensor = 0.0
 
     # exlude invalid pixels and extremely large diplacements
@@ -112,15 +113,16 @@ def train(args):
     best_evaluation = None
     if args.restore_ckpt is not None:
         checkpoint = torch.load(args.restore_ckpt)
-        weight: OrderedDict[str, Any] = checkpoint['model'] if 'model' in checkpoint else checkpoint
+        weight: OrderedDict[str, Any] = \
+            checkpoint['model'] if 'model' in checkpoint else checkpoint
         if args.reset_context:
             _weight = OrderedDict()
             for key, val in checkpoint.items():
                 if args.context != 128 and \
-                    ('.cnet.' in key or '.update_block.gru.' in key):
+                        ('.cnet.' in key or '.update_block.gru.' in key):
                     pass
                 elif args.hidden != 128 and \
-                    ('.update_block.gru.' in key or '.update_block.flow_head.' in key):
+                        ('.update_block.gru.' in key or '.update_block.flow_head.' in key):
                     pass
                 else:
                     _weight[key] = val
@@ -159,7 +161,7 @@ def train(args):
 
             loss, metrics = sequence_loss(flow_predictions, flow,
                                           image1, image2, valid,
-                                          args.gamma)
+                                          args)
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
@@ -171,36 +173,42 @@ def train(args):
             logger.push({'loss': loss.item()})
 
         logger.closePbar()
-        PATH = 'checkpoints/%s/model.pth' % args.name
         torch.save({
             'epoch': epoch + 1,
             'model': model.state_dict(),
             'optimizer': optimizer.state_dict(),
             'scheduler': scheduler,
             'best_evaluation': best_evaluation
-        }, PATH)
+        }, f'checkpoints/{args.name}/model.pth')
 
-        results = {}
-        for val_dataset in args.validation:
-            if val_dataset == 'chairs':
-                results.update(evaluate.validate_chairs(model.module))
-            elif val_dataset == 'sintel':
-                results.update(evaluate.validate_sintel(model.module))
-            elif val_dataset == 'kitti':
-                results.update(evaluate.validate_kitti(model.module))
-        logger.write_dict(results, 'epoch')
-
-        evaluation_score = np.mean(list(results.values()))
-        if best_evaluation is None or evaluation_score < best_evaluation:
-            best_evaluation = evaluation_score
-            PATH = 'checkpoints/%s/model-best.pth' % args.name
+        if (epoch + 1) % 50 == 0:
             torch.save({
                 'epoch': epoch + 1,
                 'model': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'scheduler': scheduler,
                 'best_evaluation': best_evaluation
-            }, PATH)
+            }, f'checkpoints/{args.name}/model-{epoch + 1}.pth')
+
+        results = {}
+        if args.validation == 'mixed':
+            results.update(evaluate.validate_sintel(model.module,
+                                                    dstypes=['clean', 'final']))
+        else:
+            results.update(evaluate.validate_sintel(model.module,
+                                                    dstypes=[args.validation]))
+        logger.write_dict(results, 'epoch')
+
+        evaluation_score = np.mean(list(results.values()))
+        if best_evaluation is None or evaluation_score < best_evaluation:
+            best_evaluation = evaluation_score
+            torch.save({
+                'epoch': epoch + 1,
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'scheduler': scheduler,
+                'best_evaluation': best_evaluation
+            }, f'checkpoints/{args.name}/model-best.pth')
 
         model.train()
         if args.freeze_bn:
@@ -220,7 +228,10 @@ if __name__ == '__main__':
     parser.add_argument('--allow_nonstrict', action='store_true',
                         help='allow non-strict loading')
     parser.add_argument('--small', action='store_true', help='use small model')
-    parser.add_argument('--validation', type=str, nargs='+')
+    parser.add_argument('--dstype', type=str, default='clean',
+                        choices=['clean', 'final', 'mixed'])
+    parser.add_argument('--validation', type=str, default='clean',
+                        choices=['clean', 'final', 'mixed'])
 
     parser.add_argument('--lr', type=float, default=0.00002)
     parser.add_argument('--num_epochs', type=int, default=10)
@@ -249,7 +260,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.hidden != 128 or args.context != 128:
         args.reset_context = True
-    args.name = f'{args.name}-ep{args.num_epochs}-c{args.context}'
+    args.name = f'{args.name}-{args.dstype}-ep{args.num_epochs}-c{args.context}'
 
     torch.manual_seed(1234)
     np.random.seed(1234)

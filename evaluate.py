@@ -4,6 +4,7 @@ sys.path.append('core')  # nopep8
 
 import argparse
 import os
+from typing import List, Literal
 
 import numpy as np
 import torch
@@ -93,12 +94,12 @@ def validate_chairs(model, iters=24):
 
 
 @torch.no_grad()
-def validate_sintel(model, iters=32):
+def validate_sintel(model, iters=32, dstypes: List[Literal['clean', 'final']] = ['clean']):
     """ Peform validation using the Sintel (train) split """
     model.eval()
     results = {}
     with torch.no_grad():
-        for dstype in ['clean']:
+        for dstype in dstypes:
             val_dataset = datasets.Sintel(split='validate', dstype=dstype)
             epe_list = []
 
@@ -172,7 +173,9 @@ def validate_kitti(model, iters=24):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', help="restore checkpoint")
-    parser.add_argument('--dataset', default='sintel', help="dataset for evaluation")
+    parser.add_argument('--dstype', default='clean', 
+                        choices=['clean', 'final', 'mixed'],
+                        help="dataset for evaluation")
     parser.add_argument('--small', action='store_true', help='use small model')
     parser.add_argument('--mixed_precision',
                         action='store_true', help='use mixed precision')
@@ -198,13 +201,7 @@ if __name__ == '__main__':
     # create_kitti_submission(model.module)
 
     with torch.no_grad():
-        if args.dataset == 'chairs':
-            raise NotImplementedError
-            validate_chairs(model.module)
-
-        elif args.dataset == 'sintel':
-            validate_sintel(model.module)
-
-        elif args.dataset == 'kitti':
-            raise NotImplementedError
-            validate_kitti(model.module)
+        if args.dstype == 'mixed':
+            validate_sintel(model.module, dstypes=['clean', 'final'])
+        else:
+            validate_sintel(model.module, dstypes=[args.dstype])
