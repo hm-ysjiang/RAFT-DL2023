@@ -154,3 +154,42 @@ def photometric_error(img1: torch.Tensor, img2: torch.Tensor,
     l1_err = (img1_warped * valid - img1 * valid).abs()
     ssim_err = SSIM_error(img1_warped * valid, img1 * valid)
     return l1_err.mean(), ssim_err.mean()
+
+
+# GMFlowNet
+@torch.no_grad()
+def compute_supervision_match(flow, occlusions, scale: int):
+    N, _, H, W = flow.shape
+    Hc, Wc = int(np.ceil(H / scale)), int(np.ceil(W / scale))
+
+    occlusions_c = occlusions[:, :, ::scale, ::scale]
+    flow_c = flow[:, :, ::scale, ::scale] / scale
+    occlusions_c = occlusions_c.reshape(N, Hc * Wc)
+
+    grid_c = coords_grid(N, Hc, Wc,
+                         device=flow.device).permute(0, 2, 3, 1).reshape(N, Hc * Wc, 2)
+    warp_c = grid_c + flow_c.permute(0, 2, 3, 1).reshape(N, Hc * Wc, 2)
+    warp_c = warp_c.round().long()
+
+    def out_bound_mask(pt, w, h):
+        return (pt[..., 0] < 0) + (pt[..., 0] >= w) + (pt[..., 1] < 0) + (pt[..., 1] >= h)
+
+    occlusions_c[out_bound_mask(warp_c, Wc, Hc)] = 1
+    warp_c = warp_c[..., 0] + warp_c[..., 1] * Wc
+
+    b_ids, i_ids = torch.split(torch.nonzero(occlusions_c == 0), 1, dim=1)
+    conf_matrix_gt = torch.zeros(N, Hc * Wc, Hc * Wc, device=flow.device)
+    j_ids = warp_c[b_ids, i_ids]
+    conf_matrix_gt[b_ids, i_ids, j_ids] = 1
+
+    return conf_matrix_gt
+
+# GMFlowNet
+def compute_match_loss(conf, conf_gt):
+    pos_mask, neg_mask = conf_gt == 1, conf_gt == 0
+
+    conf = torch.clamp(conf, 1e-6, 1 - 1e-6)
+    loss_pos = -torch.log(conf[pos_mask])
+    loss_neg = -torch.log(1 - conf[neg_mask])
+
+    return loss_pos.mean() + loss_neg.mean()

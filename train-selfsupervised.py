@@ -146,6 +146,7 @@ def train(args):
 
     for epoch in range(epoch_start, args.num_epochs):
         logger.initPbar(len(train_loader), epoch + 1)
+        should_global_matching = args.global_matching and epoch > 0
         for batch_idx, data_blob in enumerate(train_loader):
             optimizer.zero_grad()
             image1, image2, flow, valid = [x.cuda() for x in data_blob]
@@ -157,7 +158,9 @@ def train(args):
                 image2 = (image2 + stdv * torch.randn(*
                           image2.shape).cuda()).clamp(0.0, 255.0)
 
-            flow_predictions = model(image1, image2, iters=args.iters)
+            flow_predictions, softCorrMap = model(image1, image2,
+                                                  iters=args.iters,
+                                                  global_matching=should_global_matching)
 
             loss, metrics = sequence_loss(flow_predictions, flow,
                                           image1, image2, valid,
@@ -239,8 +242,10 @@ if __name__ == '__main__':
     parser.add_argument('--image_size', type=int,
                         nargs='+', default=[368, 768])
     parser.add_argument('--gpus', type=int, nargs='+', default=[0])
-    parser.add_argument('--mixed_precision',
-                        action='store_true', help='use mixed precision')
+    parser.add_argument('--mixed_precision', action='store_true',
+                        help='use mixed precision')
+    parser.add_argument('--global_matching', action='store_true',
+                        help='use global matching before optimization')
 
     parser.add_argument('--iters', type=int, default=12)
     parser.add_argument('--wdecay', type=float, default=.00005)
@@ -261,6 +266,9 @@ if __name__ == '__main__':
     if args.hidden != 128 or args.context != 128:
         args.reset_context = True
     args.name = f'{args.name}-{args.dstype}-ep{args.num_epochs}-c{args.context}'
+    if args.global_matching:
+        args.name = f'{args.name}-gm'
+    print(args)
 
     torch.manual_seed(1234)
     np.random.seed(1234)

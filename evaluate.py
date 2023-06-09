@@ -111,8 +111,8 @@ def validate_sintel(model, iters=32, dstypes: List[Literal['clean', 'final']] = 
                 padder = InputPadder(image1.shape)
                 image1, image2 = padder.pad(image1, image2)
 
-                flow_low, flow_pr = model(
-                    image1, image2, iters=iters, test_mode=True)
+                flow_low, flow_pr = model(image1, image2,
+                                          iters=iters, test_mode=True)
                 flow = padder.unpad(flow_pr[0]).cpu()
 
                 epe = torch.sum((flow - flow_gt)**2, dim=0).sqrt()
@@ -173,7 +173,7 @@ def validate_kitti(model, iters=24):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', help="restore checkpoint")
-    parser.add_argument('--dstype', default='clean', 
+    parser.add_argument('--dstype', default='clean',
                         choices=['clean', 'final', 'mixed'],
                         help="dataset for evaluation")
     parser.add_argument('--small', action='store_true', help='use small model')

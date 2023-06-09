@@ -17,7 +17,7 @@ import torch.nn as nn
 import torch.optim as optim
 from logger import Logger
 from raft import RAFT
-from utils.utils import photometric_error
+from utils.utils import compute_match_loss, compute_supervision_match, photometric_error
 
 import datasets
 import evaluate
@@ -52,12 +52,13 @@ SSIM_WEIGHT = 0.84
 
 def sequence_loss(flow_preds: List[torch.Tensor], flow_gt: torch.Tensor,
                   image1: torch.Tensor, image2: torch.Tensor,
-                  valid: torch.Tensor, args, max_flow=MAX_FLOW):
+                  valid: torch.Tensor, softCorrMap: torch.Tensor,
+                  args, max_flow=MAX_FLOW):
     """ Loss function defined over sequence of flow predictions """
 
     n_predictions = len(flow_preds)
     gamma = args.gamma
-    should_recon = args.wloss_l1recon > 0 and args.wloss_ssimrecon > 0
+    should_recon = args.wloss_l1recon > 0 or args.wloss_ssimrecon > 0
     flow_loss: torch.Tensor = 0.0
 
     # exlude invalid pixels and extremely large diplacements
@@ -75,6 +76,10 @@ def sequence_loss(flow_preds: List[torch.Tensor], flow_gt: torch.Tensor,
             photo_loss = (1 - SSIM_WEIGHT) * l1_err * args.wloss_l1recon \
                 + SSIM_WEIGHT * ssim_err * args.wloss_ssimrecon
             flow_loss += photo_loss
+        if args.global_matching:
+            occlusion = 1.0 - valid.float()
+            gt_match = compute_supervision_match(flow_gt, occlusion[:, None], 8)
+            flow_loss += 0.01 * compute_match_loss(softCorrMap, gt_match)
 
     epe = torch.sum((flow_preds[-1] - flow_gt)**2, dim=1).sqrt()
     epe = epe.view(-1)[valid.view(-1)]
@@ -152,6 +157,7 @@ def train(args):
 
     for epoch in range(epoch_start, args.num_epochs):
         logger.initPbar(len(train_loader), epoch + 1)
+        should_global_matching = args.global_matching and epoch > 0
         for batch_idx, data_blob in enumerate(train_loader):
             optimizer.zero_grad()
             image1, image2, flow, valid = [x.cuda() for x in data_blob]
@@ -163,11 +169,13 @@ def train(args):
                 image2 = (image2 + stdv * torch.randn(*
                           image2.shape).cuda()).clamp(0.0, 255.0)
 
-            flow_predictions = model(image1, image2, iters=args.iters)
+            flow_predictions, softCorrMap = model(image1, image2,
+                                                  iters=args.iters,
+                                                  global_matching=should_global_matching)
 
             loss, metrics = sequence_loss(flow_predictions, flow,
                                           image1, image2, valid,
-                                          args)
+                                          softCorrMap, args)
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
@@ -245,8 +253,10 @@ if __name__ == '__main__':
     parser.add_argument('--image_size', type=int,
                         nargs='+', default=[368, 768])
     parser.add_argument('--gpus', type=int, nargs='+', default=[0])
-    parser.add_argument('--mixed_precision',
-                        action='store_true', help='use mixed precision')
+    parser.add_argument('--mixed_precision', action='store_true',
+                        help='use mixed precision')
+    parser.add_argument('--global_matching', action='store_true',
+                        help='use global matching before optimization')
 
     parser.add_argument('--iters', type=int, default=12)
     parser.add_argument('--wdecay', type=float, default=.00005)
@@ -271,6 +281,8 @@ if __name__ == '__main__':
     if args.hidden != 128 or args.context != 128:
         args.reset_context = True
     args.name = f'{args.name}-{args.dstype}-ep{args.num_epochs}-c{args.context}'
+    if args.global_matching:
+        args.name = f'{args.name}-gm'
     print(args)
 
     torch.manual_seed(1234)
