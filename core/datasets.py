@@ -221,6 +221,38 @@ class Sintel(data.Dataset):
         return img1, img2, flow, valid.float()
 
 
+class NYCUData(data.Dataset):
+    def __init__(self, root='datasets/NYCU_set'):
+        super().__init__()
+        image_root = osp.join(root)
+        self.image_list = []
+
+        for scene in os.listdir(image_root):
+            image_files = sorted(glob(osp.join(image_root, scene, '*.jpg')))
+            n_pairs = len(image_files) - 1
+            for i in range(n_pairs):
+                self.image_list += [[image_files[i], image_files[i+1]]]
+
+    def __len__(self):
+        return len(self.image_list)
+
+    def __getitem__(self, index) -> Tuple[torch.Tensor, torch.Tensor]:
+        index = index % len(self.image_list)
+        img1 = frame_utils.read_gen(self.image_list[index][0])
+        img2 = frame_utils.read_gen(self.image_list[index][1])
+
+        img1 = np.array(img1).astype(np.uint8)
+        img2 = np.array(img2).astype(np.uint8)
+
+        img1 = img1[..., :3]
+        img2 = img2[..., :3]
+
+        img1 = torch.from_numpy(img1).permute(2, 0, 1).float()
+        img2 = torch.from_numpy(img2).permute(2, 0, 1).float()
+
+        return img1, img2
+
+
 # class FlyingChairs(FlowDataset):
 #     def __init__(self, aug_params=None, split='train', root='datasets/FlyingChairs_release/data'):
 #         super(FlyingChairs, self).__init__(aug_params)
@@ -340,6 +372,15 @@ def fetch_dataloader(args, TRAIN_DS='C+T+K+S+H'):
         train_dataset = Sintel({'crop_size': args.image_size,
                                 'min_scale': -0.2, 'max_scale': 0, 'do_flip': True}, dstype=args.dstype)
 
+    train_loader = data.DataLoader(train_dataset, batch_size=args.batch_size,
+                                   pin_memory=True, shuffle=True, num_workers=4, drop_last=True)
+
+    print('Training with %d image pairs' % len(train_dataset))
+    return train_loader
+
+
+def fetch_nycu(args):
+    train_dataset = NYCUData()
     train_loader = data.DataLoader(train_dataset, batch_size=args.batch_size,
                                    pin_memory=True, shuffle=True, num_workers=4, drop_last=True)
 

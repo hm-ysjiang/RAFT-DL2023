@@ -30,7 +30,7 @@ full="python -u train-supervised.py \
              --wloss_l1recon 2.5 \
              --wloss_ssimrecon 2.5"
 
-cmd=$baseline    # Change this line
+cmd=$plus_ssim    # Change this line
 
 echo ${cmd}
 eval ${cmd}

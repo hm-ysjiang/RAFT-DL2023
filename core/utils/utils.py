@@ -117,9 +117,21 @@ def warp_flow(x, flow, use_mask=False):
     ouptut: [B, C, H, W]
     """
     vgrid = create_flow_grid(flow)
+    return warp_vgrid(x, vgrid, use_mask)
+
+
+def warp_vgrid(x: torch.Tensor, vgrid: torch.Tensor, use_mask=False):
+    """
+    warp an image/tensor (im2) back to im1, according to the optical flow
+    Inputs:
+    x: [B, C, H, W] (im2)
+    flow: [B, 2, H, W] flow
+    Returns:
+    ouptut: [B, C, H, W]
+    """
     output = F.grid_sample(x, vgrid, align_corners=True)
     if use_mask:
-        mask = autograd.Variable(torch.ones(x.size())).to(x.get_device())
+        mask = torch.autograd.Variable(torch.ones(x.size())).to(x.device)
         mask = F.grid_sample(mask, vgrid, align_corners=True)
         mask[mask < 0.9999] = 0
         mask[mask > 0] = 1
@@ -156,6 +168,15 @@ def photometric_error(img1: torch.Tensor, img2: torch.Tensor,
     return l1_err.mean(), ssim_err.mean()
 
 
+def photometric_error_masked(img1: torch.Tensor, img2: torch.Tensor,
+                             vgrid: torch.Tensor, valid: torch.Tensor):
+    maskw = valid.mean() + 1e-6
+    img1_warped = warp_vgrid(img2, vgrid)
+    l1_err = (img1_warped * valid - img1 * valid).abs()
+    ssim_err = SSIM_error(img1_warped * valid, img1 * valid)
+    return l1_err.mean() / maskw, ssim_err.mean() / maskw
+
+
 # GMFlowNet
 @torch.no_grad()
 def compute_supervision_match(flow, occlusions, scale: int):
@@ -184,8 +205,8 @@ def compute_supervision_match(flow, occlusions, scale: int):
 
     return conf_matrix_gt
 
-# GMFlowNet
-def compute_match_loss(conf, conf_gt):
+
+def compute_match_loss(conf, conf_gt):  # GMFlowNet
     pos_mask, neg_mask = conf_gt == 1, conf_gt == 0
 
     conf = torch.clamp(conf, 1e-6, 1 - 1e-6)
@@ -193,3 +214,40 @@ def compute_match_loss(conf, conf_gt):
     loss_neg = -torch.log(1 - conf[neg_mask])
 
     return loss_pos.mean() + loss_neg.mean()
+
+
+def magsq(x: torch.Tensor, dim):
+    return torch.sum(x**2, dim, keepdim=(dim is not None))
+
+
+def create_border_mask(tensor: torch.Tensor, ratio=0.1):
+    B, _, H, W = tensor.shape
+    sz = np.ceil(min(H, W) * ratio).astype(int).item(0)
+    border_mask = torch.zeros((H, W), dtype=tensor.dtype, device=tensor.device)
+    border_mask[sz:-sz, sz:-sz] = 1.0
+    border_mask = border_mask.view(1, 1, H, W).expand(B, -1, -1, -1)
+    return border_mask.detach()
+
+
+def fwdbwd_occ_mask(flow_fwd: torch.Tensor, flow_bwd: torch.Tensor,
+                    vgrid_fwd: torch.Tensor, vgrid_bwd: torch.Tensor,
+                    use_border_mask=False, return_warpdiff=False):
+    mag_flow = magsq(flow_fwd, 1) + magsq(flow_bwd, 1)
+    flow_bwd_warped = warp_vgrid(flow_bwd, vgrid_fwd, True)
+    flow_fwd_warped = warp_vgrid(flow_fwd, vgrid_bwd, True)
+    flow_fwd_warpdiff = flow_fwd + flow_bwd_warped
+    flow_bwd_warpdiff = flow_bwd + flow_fwd_warped
+    occ_thresh = 0.01 * mag_flow + 0.5
+    occ_fwd = (magsq(flow_fwd_warpdiff, 1) > occ_thresh).float()
+    occ_bwd = (magsq(flow_bwd_warpdiff, 1) > occ_thresh).float()
+    mask_fwd = (1 - occ_fwd)
+    mask_bwd = (1 - occ_bwd)
+
+    if use_border_mask:
+        border_mask = create_border_mask(flow_fwd)
+        mask_fwd = border_mask * mask_fwd
+        mask_bwd = border_mask * mask_bwd
+
+    if return_warpdiff:
+        return mask_fwd, mask_bwd, flow_fwd_warpdiff, flow_bwd_warpdiff
+    return mask_fwd, mask_bwd
